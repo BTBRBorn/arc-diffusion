@@ -1,0 +1,23 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+#Project specific
+.vscode/
+data/*/
+playground.ipynb
+checkpoints/
+test_checkpoints/
+tokenizers/
+results.json
+gen_arc/
+
+#uv specific
+uv.lock
