@@ -7,12 +7,16 @@ import utils
 
 
 # Calculate the loss for one batch
-def calculate_loss(model, config, x, y, grad_accum_num=1):
+def calculate_loss(model, config, x, y, mask_token, grad_accum_num=1):
     B, T = x.size()
+    x_flat, y_flat = x.view(-1), y.view(-1)
     if config.use_mixed_precision:
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             logits = model(x, config.attention_mode)
-            loss = F.cross_entropy(logits.view(B * T, config.vocab_size), y.view(B * T))
+            logits_flat = logits.view(B * T, config.vocab_size)
+            loss = F.cross_entropy(
+                logits_flat[x_flat == mask_token], y_flat[x_flat == mask_token]
+            )
             loss = loss / grad_accum_num
     else:
         logits = model(x, config.attention_mode)
@@ -30,14 +34,15 @@ def train_step(
     config,
     grad_accum_num,
     batch_num,
+    mask_token,
 ):
     if batch_num % grad_accum_num != 0:
         with model.no_sync():
-            loss = calculate_loss(model, config, x, y, grad_accum_num)
+            loss = calculate_loss(model, config, x, y, mask_token, grad_accum_num)
             loss.backward()
             norm = None
     else:
-        loss = calculate_loss(model, config, x, y, grad_accum_num)
+        loss = calculate_loss(model, config, x, y, mask_token, grad_accum_num)
         # Sync all the gradients
         loss.backward()
         norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -47,7 +52,7 @@ def train_step(
     return loss, norm
 
 
-def val_step(model, dataloader, config, device):
+def val_step(model, dataloader, config, mask_token, device):
     avg_loss = 0.0
     model.eval()
     iter_steps = 0
@@ -55,7 +60,7 @@ def val_step(model, dataloader, config, device):
         for x, y in dataloader:
             iter_steps += 1
             x, y = x.to(device), y.to(device)
-            loss = calculate_loss(model, config, x, y)
+            loss = calculate_loss(model, config, x, y, mask_token)
             avg_loss += loss.detach()
 
         avg_loss /= iter_steps
@@ -82,6 +87,7 @@ def train(
     world_size,
 ):
     base_model, model = models
+    mask_token = tokenizer.special_tokens["mask_token"]
     model.train()
     total_iter = len(train_dataloader) // scheduler_intervals
     current_iter = len(results["train_losses"]) + 1
@@ -90,6 +96,7 @@ def train(
         model=model,
         dataloader=val_dataloader,
         config=config,
+        mask_token=mask_token,
         device=device,
     )
     if is_master:
@@ -112,6 +119,7 @@ def train(
             config,
             grad_accum_num,
             batch_num,
+            mask_token,
         )
 
         if is_master:
@@ -153,7 +161,11 @@ def train(
         # Checkpoint and validation
         if not (batch_num % checkpoint_intervals):
             val_loss = val_step(
-                model=model, dataloader=val_dataloader, config=config, device=device
+                model=model,
+                dataloader=val_dataloader,
+                config=config,
+                mask_token=mask_token,
+                device=device,
             )
 
             if is_master:

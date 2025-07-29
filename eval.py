@@ -9,9 +9,8 @@ import os
 from pathlib import Path
 import json
 import argparse
-from collections import deque
-import math
 import random
+from datetime import timedelta
 
 # Modules are needed for multi-gpu inference
 import torch.distributed as dist
@@ -29,7 +28,8 @@ class Evaluator:
             compile_model=False,
         )
 
-    def _create_context(self, task, test_index, tokenizer):
+    @staticmethod
+    def _create_context(task, test_index, tokenizer):
         new_task = {}
         new_task["context"] = deepcopy(task["train"])
         test_input = deepcopy(
@@ -38,48 +38,6 @@ class Evaluator:
         new_task["context"].append(test_input)
         tokens = tokenizer.encode(new_task["context"])
         return tokens[:-1], len(tokens[:-1])
-
-    @staticmethod
-    def _bfs(
-        model,
-        context: torch.Tensor,
-        config,
-        tokenizer,
-        tokens_threshold,
-        prob_threshold=1.0,
-    ):
-        contexts = deque([(context, 0.0, 0)])
-        solutions = []
-        with torch.inference_mode():
-            while contexts:
-                context, score, counter = contexts.popleft()
-                if counter > tokens_threshold:
-                    continue
-                context = context[:, -config.block_size :]
-                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                    logits = model(context)
-                probs = F.softmax(logits[:, -1, :], dim=-1)
-                # Bundle next_tokens and their probability together
-                probs = probs.view(-1)
-                mask = probs > prob_threshold
-                tokens = mask.nonzero(as_tuple=True)[0]
-                if len(tokens) == 0:
-                    tokens = torch.argmax(probs).unsqueeze(dim=0)
-                    mask = tokens
-                next_tokens = zip(tokens, probs[mask])
-                for next_token, prob in next_tokens:
-                    next_context = torch.cat((context, next_token.view(1, -1)), dim=-1)
-                    new_score = score + math.log(prob.item())
-                    new_counter = counter + 1
-                    if next_token.item() != tokenizer.special_tokens["end_of_output"]:
-                        contexts.append((next_context, new_score, new_counter))
-                    else:
-                        solution = tokenizer.decode(
-                            next_context.tolist()[0], only_last_output=True
-                        )[0]["output"]
-                        new_score /= len(solution)
-                        solutions.append((solution, new_score))
-        return solutions
 
     @staticmethod
     def _beam_search(
@@ -274,7 +232,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    dist.init_process_group(backend="nccl")
+    dist.init_process_group(backend="nccl", timeout=timedelta(minutes=30))
 
     # torchrun will handle setting up environment variables
     rank = int(os.environ["RANK"])

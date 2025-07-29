@@ -76,6 +76,7 @@ class Tokenizer:
             "end_of_output": None,
             "row_indicator": None,
             "context_indicator": None,
+            "mask_token": None,
         }
 
         last_token = vocab_size - len(self.special_tokens)

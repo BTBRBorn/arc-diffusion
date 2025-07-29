@@ -12,23 +12,27 @@ class CustomDataset(Dataset):
         data_path: Path,
         block_size: int,
         is_train: bool,
-        mask_token: int = 16,
-        mask_min_max: tuple = (0.1, 0.8),
+        mask_token: int,
+        mask_min_max_train: tuple = (0.01, 0.8),
         mask_only_end: float = 0.1,
     ):
         self.block_size = block_size
         self.data_path = data_path
         self.mask_token = mask_token
-        self.mask_min_max = mask_min_max
-        self.mask_only_end = mask_only_end
         if is_train:
             self.filelist = [
                 file for file in os.listdir(data_path) if "training" in file
             ]
+            self.mask_min_max = mask_min_max_train
+            self.mask_only_end = mask_only_end
         else:
             self.filelist = [
                 file for file in os.listdir(data_path) if "validation" in file
             ]
+            # We don't want a high variance between validation data
+            # So mask_min_max will have much less range than training process
+            self.mask_min_max = (0.1, 0.3)
+            self.mask_only_end = 0.5
 
         self.meta_data = {}
         self.populate_meta_data()
@@ -62,7 +66,7 @@ class CustomDataset(Dataset):
     def __getitem__(self, index):
         num_shard = 1
         if index == -1:
-            index = len(self) - 1 
+            index = len(self) - 1
         try:
             while not (
                 self.meta_data[num_shard]["start_index"]
@@ -83,9 +87,9 @@ class CustomDataset(Dataset):
 
         y = torch.tensor(y, dtype=torch.long)
 
-        min, max = self.mask_min_max
-        mask_proportion = torch.rand(1).item()*(max-min) + min
-        num_masks = int(mask_proportion*self.block_size)
+        min_mask, max_mask = self.mask_min_max
+        mask_proportion = torch.rand(1).item() * (max_mask - min_mask) + min_mask
+        num_masks = int(mask_proportion * self.block_size)
 
         if torch.rand(1).item() <= self.mask_only_end:
             ids = torch.arange(self.block_size)[-num_masks:]
@@ -98,13 +102,23 @@ class CustomDataset(Dataset):
         return x, y
 
 
-def create_dataloaders(config, data_path, train_shuffle=True):
+def create_dataloaders(config, data_path, mask_token, train_shuffle=True):
     data_path = Path(data_path)
 
-    train_dataset = CustomDataset(data_path, config.block_size, is_train=True)
-    val_dataset = CustomDataset(data_path, config.block_size, is_train=False)
+    train_dataset = CustomDataset(
+        data_path,
+        config.block_size,
+        is_train=True,
+        mask_token=mask_token,
+    )
+    val_dataset = CustomDataset(
+        data_path,
+        config.block_size,
+        is_train=False,
+        mask_token=mask_token,
+    )
 
-    train_sampler = DistributedSampler(train_dataset, shuffle=True)
+    train_sampler = DistributedSampler(train_dataset, shuffle=train_shuffle)
     val_sampler = DistributedSampler(val_dataset)
 
     train_dataloader = DataLoader(

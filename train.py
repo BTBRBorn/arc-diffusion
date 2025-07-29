@@ -108,7 +108,9 @@ if __name__ == "__main__":
         }
 
     train_dataloader, val_dataloader, train_sampler = create_dataloaders(
-        config, args.data_path
+        config,
+        args.data_path,
+        tokenizer.special_tokens["mask_token"],
     )
     results["training_run"] += 1
     train_sampler.set_epoch(results["training_run"])
@@ -122,14 +124,15 @@ if __name__ == "__main__":
         print("-" * 50)
         print(optimizer)
         print("-" * 50)
-        print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
+        print(
+            f"Total number of parameters: {sum(p.numel() for p in model.parameters())}"
+        )
         print("-" * 50)
         print(
             "Total number of tokens in every training step: "
             + f"{config.batch_size * config.block_size * results['grad_accum_num'] * world_size}",
         )
         print("-" * 50)
-
 
     results = engine.train(
         models=models,
