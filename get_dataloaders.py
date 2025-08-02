@@ -5,6 +5,28 @@ import torch
 import numpy as np
 import os
 
+def mask_tokens(x: torch.Tensor, mask_range: tuple, mask_token: int):
+        tensor_length = x.size(0)
+        min_mask, max_mask = mask_range
+        mask_ratio = torch.rand(1).item() * (max_mask - min_mask) + min_mask
+        num_masks = int(mask_ratio * tensor_length)
+        mask_ids = torch.randperm(tensor_length)[:num_masks]
+        x[mask_ids] = mask_token
+        return x.clone()
+
+def add_noise(x: torch.Tensor, noise_range: tuple, mask_token: int) -> torch.Tensor:
+    min_noise, max_noise = noise_range
+    assert 0 <= min_noise < max_noise <= 1.0
+    noise_ratio = torch.rand(1).item() * (max_noise - min_noise) + min_noise
+    candidate_indices = (x != mask_token).nonzero(as_tuple=True)[0]
+    num_candidates = candidate_indices.numel()
+    num_noise = int(noise_ratio * num_candidates)
+    noise_indices = candidate_indices[torch.randperm(num_candidates)[:num_noise]]
+    if num_noise > 0:
+        #Make sure mask_token is the largest token in the tokenizer
+        noise = torch.randint(0, mask_token, size=(num_noise, ))
+        x[noise_indices] = noise
+    return x.clone()
 
 class CustomDataset(Dataset):
     def __init__(
@@ -13,26 +35,26 @@ class CustomDataset(Dataset):
         block_size: int,
         is_train: bool,
         mask_token: int,
-        mask_min_max_train: tuple = (0.01, 0.8),
-        mask_only_end: float = 0.1,
+        mask_range_train: tuple = (0.01, 0.8),
+        noise_range_train: float = (0.0, 0.3),
     ):
         self.block_size = block_size
         self.data_path = data_path
         self.mask_token = mask_token
+        self.is_train = is_train
         if is_train:
             self.filelist = [
                 file for file in os.listdir(data_path) if "training" in file
             ]
-            self.mask_min_max = mask_min_max_train
-            self.mask_only_end = mask_only_end
+            self.mask_range = mask_range_train
+            self.noise_range = noise_range_train
         else:
             self.filelist = [
                 file for file in os.listdir(data_path) if "validation" in file
             ]
             # We don't want a high variance between validation data
-            # So mask_min_max will have much less range than training process
-            self.mask_min_max = (0.1, 0.3)
-            self.mask_only_end = 0.5
+            # So mask_range_ will have much less range than training process
+            self.mask_range = (0.25, 0.3)
 
         self.meta_data = {}
         self.populate_meta_data()
@@ -86,18 +108,14 @@ class CustomDataset(Dataset):
             y = data[-self.block_size :]
 
         y = torch.tensor(y, dtype=torch.long)
-
-        min_mask, max_mask = self.mask_min_max
-        mask_proportion = torch.rand(1).item() * (max_mask - min_mask) + min_mask
-        num_masks = int(mask_proportion * self.block_size)
-
-        if torch.rand(1).item() <= self.mask_only_end:
-            ids = torch.arange(self.block_size)[-num_masks:]
-        else:
-            ids = torch.randperm(self.block_size)[:num_masks]
-
         x = y.clone()
-        x[ids] = self.mask_token
+
+        #Mask some of the tokens
+        x = mask_tokens(x, self.mask_range, self.mask_token)
+
+        #Add noise to the training data
+        if self.is_train:
+            x = add_noise(x, self.noise_range, self.mask_token)
 
         return x, y
 

@@ -184,4 +184,15 @@ def train(
                     results=results,
                 )
 
+    if is_master and checkpoint_save_path:
+        utils.save_checkpoint(
+            checkpoint_path=Path(checkpoint_save_path),
+            model=base_model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            tokenizer=tokenizer,
+            config=config,
+            results=results,
+        )
+
     return results
