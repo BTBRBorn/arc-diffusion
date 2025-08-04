@@ -8,6 +8,7 @@ import os
 def mask_tokens(x: torch.Tensor, mask_range: tuple, mask_token: int):
         tensor_length = x.size(0)
         min_mask, max_mask = mask_range
+        assert 0 <= min_mask <= max_mask <= 1.0
         mask_ratio = torch.rand(1).item() * (max_mask - min_mask) + min_mask
         num_masks = int(mask_ratio * tensor_length)
         mask_ids = torch.randperm(tensor_length)[:num_masks]
@@ -16,7 +17,7 @@ def mask_tokens(x: torch.Tensor, mask_range: tuple, mask_token: int):
 
 def add_noise(x: torch.Tensor, noise_range: tuple, mask_token: int) -> torch.Tensor:
     min_noise, max_noise = noise_range
-    assert 0 <= min_noise < max_noise <= 1.0
+    assert 0 <= min_noise <= max_noise <= 1.0
     noise_ratio = torch.rand(1).item() * (max_noise - min_noise) + min_noise
     candidate_indices = (x != mask_token).nonzero(as_tuple=True)[0]
     num_candidates = candidate_indices.numel()
@@ -36,7 +37,6 @@ class CustomDataset(Dataset):
         is_train: bool,
         mask_token: int,
         mask_range_train: tuple = (0.01, 0.8),
-        noise_range_train: float = (0.0, 0.3),
     ):
         self.block_size = block_size
         self.data_path = data_path
@@ -47,7 +47,6 @@ class CustomDataset(Dataset):
                 file for file in os.listdir(data_path) if "training" in file
             ]
             self.mask_range = mask_range_train
-            self.noise_range = noise_range_train
         else:
             self.filelist = [
                 file for file in os.listdir(data_path) if "validation" in file
@@ -112,10 +111,6 @@ class CustomDataset(Dataset):
 
         #Mask some of the tokens
         x = mask_tokens(x, self.mask_range, self.mask_token)
-
-        #Add noise to the training data
-        if self.is_train:
-            x = add_noise(x, self.noise_range, self.mask_token)
 
         return x, y
 
