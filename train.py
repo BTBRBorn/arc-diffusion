@@ -3,7 +3,6 @@ import argparse
 import pickle
 import torch
 
-from get_tokenizer import Tokenizer
 from get_dataloaders import create_dataloaders
 import model as m
 import engine
@@ -36,9 +35,8 @@ if __name__ == "__main__":
     parser.add_argument("--use_mixed_precision", type=int, choices={0, 1}, default=1)
     parser.add_argument("--checkpoint_save_path", type=str, default="")
     parser.add_argument("--checkpoint_load_path", type=str, default="")
-    parser.add_argument("--scheduler_iter", type=int, default=1200)
-    parser.add_argument("--weight_decay", type=float, default=1.0)
-    parser.add_argument("--tokenizer_path", type=str, default="")
+    parser.add_argument("--scheduler_iter", type=int, default=2000)
+    parser.add_argument("--weight_decay", type=float, default=0.1)
 
     args = parser.parse_args()
 
@@ -94,11 +92,12 @@ if __name__ == "__main__":
             eta_min=1e-6,
         )
 
-        if args.tokenizer_path:
-            with open(Path(args.tokenizer_path), "rb") as fhandle:
-                tokenizer = pickle.load(fhandle)
-        else:
-            tokenizer = Tokenizer(config.vocab_size)
+        with open(Path(args.data_path) / "tokenizer.pickle", "rb") as fhandle:
+            tokenizer = pickle.load(fhandle)
+
+        assert args.vocab_size == tokenizer.vocab_size, (
+            "model vocab size and tokenizer vocab_size has to be equal"
+        )
 
         results = {
             "train_losses": [],

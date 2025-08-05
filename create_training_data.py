@@ -134,9 +134,9 @@ if __name__ == "__main__":
     parser.add_argument("--processed_data_path", type=str, default="data/pretraining")
     parser.add_argument("--aug_num_shards", type=int, default=10)
     parser.add_argument("--aug_num_repeat_per_shard", type=int, default=1)
-    parser.add_argument("--vocab_size", type=int, default=16)
+    parser.add_argument("--vocab_size", type=int, default=17)
     parser.add_argument("--num_workers", type=int, default=10)
-    parser.add_argument("--tokenizer_save_path", type=str, default="")
+    parser.add_argument("--train_tokenizer", type=int, choices={0, 1}, default=0)
     parser.add_argument("--only_validation_data", type=int, choices={0, 1}, default=0)
 
     args = parser.parse_args()
@@ -182,6 +182,15 @@ if __name__ == "__main__":
                 print(f"File {outfile_path} is created.")
         print("Finished with creating augmented competition data.")
 
+        if args.train_tokenizer:
+            tokenizer.train(
+                data_path=PROCESSED_DATA_PATH,
+                num_workers=args.num_workers,
+            )
+
+        with open(PROCESSED_DATA_PATH / "tokenizer.pickle", "wb") as fhandle:
+            pickle.dump(tokenizer, fhandle)
+
     # Validation data is being created
     create_data(
         source_path=VAL_DATA_PATH,
@@ -193,15 +202,3 @@ if __name__ == "__main__":
         num_repeat=1,
     )
 
-    if args.tokenizer_save_path:
-        tokenizer.train(
-            data_path=PROCESSED_DATA_PATH,
-            num_workers=args.num_workers,
-        )
-
-        tokenizer_save_path = Path(args.tokenizer_save_path)
-        if not tokenizer_save_path.parent.exists():
-            tokenizer_save_path.parent.mkdir(parents=True)
-
-        with open(tokenizer_save_path, "wb") as fhandle:
-            pickle.dump(tokenizer, fhandle)
