@@ -15,3 +15,11 @@ The ARC challenge requires an agent to generalize abstract concepts from very fe
 
 ### Missing Features :disappointed:
   * **Inference:** Inference code is not complete. `eval.py` still needs work.
+
+### Purpose
+
+This project is dedicated to exploring model architectures that are both more efficient and possess stronger innate reasoning capabilities.
+
+This repository provides a flexible training and evaluation pipeline for testing various architectural hypotheses. The public version includes a masked diffusion model with multi-head attention, mlp layer with gelu activations and layer normalization in `model.py`, which serves as a primary baseline.
+
+The pipeline is fundamentally designed to evaluate **any masked diffusion model**. By modifying `model.py`, it can be easily repurposed to test entirely different architectures and concepts.
